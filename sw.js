@@ -1,18 +1,18 @@
-const CACHE = 'finance-v1';
-const ASSETS = [
-  './finance-tracker.html',
-  './manifest.json',
-  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap'
-];
+const CACHE = 'finance-v2';
 
-// Install: cache app shell
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(cache =>
+      cache.addAll([
+        './finance-tracker.html',
+        './manifest.json',
+        './icon-192.png',
+        './icon-512.png'
+      ])
+    ).then(() => self.skipWaiting())
   );
 });
 
-// Activate: clean old caches
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -21,31 +21,41 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch: cache-first for app shell, network-first for GitHub API
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Always go network-first for GitHub API (sync)
   if (url.includes('api.github.com')) {
     e.respondWith(
-      fetch(e.request).catch(() => new Response('{"error":"offline"}', {
-        headers: { 'Content-Type': 'application/json' }
-      }))
+      fetch(e.request).catch(() =>
+        new Response('{"error":"offline"}', { headers: { 'Content-Type': 'application/json' } })
+      )
     );
     return;
   }
 
-  // Cache-first for everything else
+  if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
+    e.respondWith(
+      caches.open(CACHE).then(cache =>
+        fetch(e.request).then(response => {
+          cache.put(e.request, response.clone());
+          return response;
+        }).catch(() => cache.match(e.request))
+      )
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (response && response.status === 200 && response.type !== 'opaque') {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
-        }
-        return response;
-      }).catch(() => caches.match('./finance-tracker.html'));
-    })
+    caches.open(CACHE).then(cache =>
+      cache.match(e.request).then(cached => {
+        const fetchPromise = fetch(e.request).then(response => {
+          if (response && response.status === 200) {
+            cache.put(e.request, response.clone());
+          }
+          return response;
+        }).catch(() => cached);
+        return cached || fetchPromise;
+      })
+    )
   );
 });
