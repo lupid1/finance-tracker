@@ -11,6 +11,78 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, ref, set, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAmgpKyJqyJ3WQjy8PRmXp0ZCjakpXOmh0",
+    authDomain: "finance-tracker-52165.firebaseapp.com",
+    databaseURL: "https://finance-tracker-52165-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "finance-tracker-52165",
+    storageBucket: "finance-tracker-52165.firebasestorage.app",
+    messagingSenderId: "129954298229",
+    appId: "1:129954298229:web:e55071dc9ccaa8d66bbb3c"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+
+  let dbRef = null;
+  let dbListener = null;
+
+  window._fbSignIn = async function() {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch(e) {
+      console.error(e);
+      document.getElementById('setup-status').textContent = 'Sign-in failed. Try again.';
+    }
+  };
+
+  window._fbSignOut = async function() {
+    if (dbListener && dbRef) off(dbRef, 'value', dbListener);
+    await signOut(auth);
+    document.getElementById('setup-screen').style.display = 'flex';
+    document.getElementById('sync-btn').textContent = 'Sync';
+  };
+
+  window._fbSave = async function(state) {
+    if (!auth.currentUser) return;
+    const r = ref(db, 'users/' + auth.currentUser.uid + '/data');
+    await set(r, state);
+  };
+
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      document.getElementById('setup-screen').style.display = 'none';
+      document.getElementById('user-label').textContent = user.email || user.displayName || '';
+
+      // Stop any existing listener
+      if (dbListener && dbRef) off(dbRef, 'value', dbListener);
+
+      dbRef = ref(db, 'users/' + user.uid + '/data');
+      dbListener = onValue(dbRef, snapshot => {
+        const data = snapshot.val();
+        if (data) {
+          window._state = { transactions: [], budgetCategories: [], assets: [], liabilities: [], ...data };
+          if (window._onDataLoaded) window._onDataLoaded();
+        } else {
+          if (window._onDataLoaded) window._onDataLoaded();
+        }
+        window._setSyncBtn('saved', 'Synced');
+      }, err => {
+        window._setSyncBtn('error', 'Error');
+      });
+    } else {
+      if (dbListener && dbRef) off(dbRef, 'value', dbListener);
+      document.getElementById('setup-screen').style.display = 'flex';
+    }
+  });
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -565,23 +637,10 @@
   <!-- SETUP SCREEN -->
   <div id="setup-screen">
     <div class="setup-box">
-      <h2>Setup</h2>
-      <p>This app syncs your data to a private GitHub Gist. You need a GitHub account with a <a href="https://github.com/settings/tokens/new?scopes=gist&description=finance-tracker" target="_blank">Personal Access Token</a> (scope: <code>gist</code>).<br><br>Your token is stored only in this browser.</p>
-
-      <div class="field">
-        <label>GitHub Personal Access Token</label>
-        <input type="password" id="setup-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
-        <div class="setup-note">Never shared. Stored in localStorage on this device only.</div>
-      </div>
-
-      <div class="field">
-        <label>Gist ID <span style="color:var(--gray-400)">(leave blank to create new)</span></label>
-        <input type="text" id="setup-gist" placeholder="e.g. 3d8f2a1b...">
-        <div class="setup-note">If you've used this app before on another device, paste your existing Gist ID.</div>
-      </div>
-
+      <h2>Sign in</h2>
+      <p>Sign in with your Google account to sync your finance data across all devices. Your data is stored privately — only you can access it.</p>
       <div style="margin-top:24px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <button class="btn" onclick="setupSave()">Save &amp; Continue</button>
+        <button class="btn" onclick="window._fbSignIn()">Sign in with Google</button>
         <span id="setup-status" style="font-size:11px;color:var(--gray-400);"></span>
       </div>
     </div>
@@ -597,7 +656,11 @@
         <button data-section="budget" onclick="showSection('budget', this)">Budget</button>
       </nav>
     </div>
-    <button class="sync-btn" id="sync-btn" onclick="syncData()">Sync</button>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="user-label" style="font-size:10px;color:var(--gray-400);letter-spacing:0.06em;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <button class="sync-btn" id="sync-btn" onclick="window._fbSave && window._fbSave(state)">Sync</button>
+      <button class="sync-btn" onclick="window._fbSignOut && window._fbSignOut()" style="font-size:10px;">Sign out</button>
+    </div>
   </header>
 
   <main>
@@ -790,17 +853,19 @@
 // STATE
 // ─────────────────────────────────────────────
 let state = {
-  transactions: [],       // {id, type, desc, amount, date, category, note}
-  budgetCategories: [],   // {id, name, limit}
-  assets: [],             // {id, name, value}
-  liabilities: [],        // {id, name, value}
+  transactions: [],
+  budgetCategories: [],
+  assets: [],
+  liabilities: [],
 };
+
+// Expose state to Firebase module
+window._state = state;
+window._onDataLoaded = null;
 
 let editTxId = null;
 let editBcatId = null;
 let currentBudgetMonth = new Date();
-let token = '';
-let gistId = '';
 
 const INCOME_CATS = ['Salary', 'Freelance', 'Investments', 'Other Income'];
 
@@ -808,119 +873,31 @@ const INCOME_CATS = ['Salary', 'Freelance', 'Investments', 'Other Income'];
 // INIT
 // ─────────────────────────────────────────────
 function init() {
-  token = localStorage.getItem('gh_token') || '';
-  gistId = localStorage.getItem('gh_gist_id') || '';
-
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('tx-date').value = today;
-
-  if (!token) {
-    document.getElementById('setup-screen').style.display = 'flex';
-  } else {
-    document.getElementById('setup-screen').style.display = 'none';
-    loadFromGist();
-  }
-
   currentBudgetMonth = new Date();
   updateBudgetMonthDisplay();
-}
 
-// ─────────────────────────────────────────────
-// SETUP
-// ─────────────────────────────────────────────
-async function setupSave() {
-  const t = document.getElementById('setup-token').value.trim();
-  const g = document.getElementById('setup-gist').value.trim();
-  const status = document.getElementById('setup-status');
+  // Firebase module handles auth state — show setup screen by default
+  // onAuthStateChanged in the module will hide it when signed in
+  document.getElementById('setup-screen').style.display = 'flex';
 
-  if (!t) { status.textContent = 'Token required.'; return; }
-
-  status.textContent = 'Verifying...';
-  token = t;
-  gistId = g;
-
-  if (gistId) {
-    // Try to load existing gist
-    const ok = await loadFromGist(true);
-    if (!ok) { status.textContent = 'Could not load Gist. Check ID/token.'; return; }
-  } else {
-    // Create new gist
-    const newId = await createGist(t);
-    if (!newId) { status.textContent = 'Could not create Gist. Check token/permissions.'; return; }
-    gistId = newId;
-  }
-
-  localStorage.setItem('gh_token', token);
-  localStorage.setItem('gh_gist_id', gistId);
-  document.getElementById('setup-screen').style.display = 'none';
-  toast('Setup complete. Gist ID: ' + gistId);
-  renderAll();
-}
-
-// ─────────────────────────────────────────────
-// GITHUB GIST API
-// ─────────────────────────────────────────────
-async function createGist(t) {
-  try {
-    const res = await fetch('https://api.github.com/gists', {
-      method: 'POST',
-      headers: { Authorization: 'token ' + t, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        description: 'Finance Tracker Data',
-        public: false,
-        files: { 'finance-data.json': { content: JSON.stringify(state, null, 2) } }
-      })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.id;
-  } catch { return null; }
-}
-
-async function loadFromGist(silent = false) {
-  if (!token || !gistId) return false;
-  try {
-    setSyncBtn('saving', 'Loading...');
-    const res = await fetch('https://api.github.com/gists/' + gistId, {
-      headers: { Authorization: 'token ' + token }
-    });
-    if (!res.ok) { setSyncBtn('error', 'Error'); return false; }
-    const data = await res.json();
-    const content = data.files['finance-data.json']?.content;
-    if (content) {
-      const parsed = JSON.parse(content);
-      state = { transactions: [], budgetCategories: [], assets: [], liabilities: [], ...parsed };
+  // When Firebase loads data, sync it into state and render
+  window._onDataLoaded = function() {
+    if (window._state) {
+      state.transactions = window._state.transactions || [];
+      state.budgetCategories = window._state.budgetCategories || [];
+      state.assets = window._state.assets || [];
+      state.liabilities = window._state.liabilities || [];
     }
-    setSyncBtn('saved', 'Synced');
     renderAll();
-    if (!silent) toast('Loaded from Gist');
-    return true;
-  } catch (e) {
-    setSyncBtn('error', 'Error');
-    return false;
-  }
+    buildFilterOptions();
+  };
 }
 
-async function syncData() {
-  if (!token || !gistId) { toast('Not configured'); return; }
-  setSyncBtn('saving', 'Saving...');
-  try {
-    const res = await fetch('https://api.github.com/gists/' + gistId, {
-      method: 'PATCH',
-      headers: { Authorization: 'token ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        files: { 'finance-data.json': { content: JSON.stringify(state, null, 2) } }
-      })
-    });
-    if (!res.ok) throw new Error();
-    setSyncBtn('saved', 'Synced');
-    toast('Saved to Gist');
-  } catch {
-    setSyncBtn('error', 'Error');
-    toast('Sync failed');
-  }
-}
-
+// ─────────────────────────────────────────────
+// SYNC / SAVE
+// ─────────────────────────────────────────────
 function setSyncBtn(cls, label) {
   const btn = document.getElementById('sync-btn');
   btn.className = 'sync-btn ' + cls;
@@ -930,8 +907,18 @@ function setSyncBtn(cls, label) {
   }
 }
 
-function autoSave() {
-  if (token && gistId) syncData();
+window._setSyncBtn = setSyncBtn;
+
+async function autoSave() {
+  if (window._fbSave) {
+    setSyncBtn('saving', 'Saving...');
+    try {
+      await window._fbSave(state);
+      setSyncBtn('saved', 'Synced');
+    } catch {
+      setSyncBtn('error', 'Error');
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1405,16 +1392,6 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
 }
-
-// ─────────────────────────────────────────────
-// AUTO-SYNC ON APP FOCUS
-// ─────────────────────────────────────────────
-// Re-pull from Gist whenever the app becomes visible (switching devices, reopening app)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && token && gistId) {
-    loadFromGist(true);
-  }
-});
 
 // ─────────────────────────────────────────────
 // START
