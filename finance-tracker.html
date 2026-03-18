@@ -1407,6 +1407,16 @@ if ('serviceWorker' in navigator) {
 }
 
 // ─────────────────────────────────────────────
+// AUTO-SYNC ON APP FOCUS
+// ─────────────────────────────────────────────
+// Re-pull from Gist whenever the app becomes visible (switching devices, reopening app)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && token && gistId) {
+    loadFromGist(true);
+  }
+});
+
+// ─────────────────────────────────────────────
 // START
 // ─────────────────────────────────────────────
 init();
