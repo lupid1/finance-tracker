@@ -2,7 +2,8 @@
   "name": "Finance",
   "short_name": "Finance",
   "description": "Robert",
-  "start_url": "/finance-tracker.html",
+  "start_url": "https://lupid1.github.io/finance-tracker/finance-tracker.html"
+  "scope": "https://lupid1.github.io/finance-tracker/",
   "display": "standalone",
   "background_color": "#fafafa",
   "theme_color": "#fafafa",
