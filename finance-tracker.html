@@ -1026,7 +1026,12 @@
     <div class="field">
       <label>Current Bank Balance (AUD)</label>
       <input type="number" id="settings-balance" placeholder="0.00" step="0.01">
-      <div class="setup-note">Used as your baseline — added to net worth without appearing as income.</div>
+      <div class="setup-note">Set this to your current balance right now. Only transactions after today will adjust net worth from this figure.</div>
+    </div>
+    <div class="field">
+      <label>Balance date</label>
+      <input type="date" id="settings-balance-date">
+      <div class="setup-note">Transactions on or before this date are excluded from net worth — they're already reflected in your balance.</div>
     </div>
 
     <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray-600);margin-bottom:12px;margin-top:20px;">Appearance</div>
@@ -1069,6 +1074,7 @@ let state = {
   wishlist: [],
   recurring: [],
   bankBalance: 0,
+  balanceSetDate: null,
   darkMode: false,
 };
 
@@ -1103,6 +1109,7 @@ function init() {
       state.wishlist = window._state.wishlist || [];
       state.recurring = window._state.recurring || [];
       state.bankBalance = window._state.bankBalance || 0;
+      state.balanceSetDate = window._state.balanceSetDate || null;
       state.darkMode = window._state.darkMode || false;
     }
     applyDarkMode();
@@ -1273,6 +1280,7 @@ function renderRecurringPanel() {
 // ─────────────────────────────────────────────
 function openSettings() {
   document.getElementById('settings-balance').value = state.bankBalance || '';
+  document.getElementById('settings-balance-date').value = state.balanceSetDate || new Date().toISOString().split('T')[0];
   const dm = state.darkMode || false;
   const btn = document.getElementById('dark-mode-toggle');
   btn.textContent = dm ? 'On' : 'Off';
@@ -1286,7 +1294,9 @@ function closeSettings() {
 
 function saveSettings() {
   const bal = parseFloat(document.getElementById('settings-balance').value) || 0;
+  const balDate = document.getElementById('settings-balance-date').value || new Date().toISOString().split('T')[0];
   state.bankBalance = bal;
+  state.balanceSetDate = balDate;
   closeSettings();
   renderDashboard();
   autoSave();
@@ -1779,11 +1789,13 @@ function renderDashboard() {
 
   const totalAssets = state.assets.reduce((s, a) => s + a.value, 0);
   const totalLiabilities = state.liabilities.reduce((s, l) => s + l.value, 0);
-  // All-time net from transactions
-  const allTimeIncome = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const allTimeExpenses = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-  const txNet = allTimeIncome - allTimeExpenses;
-  // Wishlist adjustments: owed-to-me pending reduces net worth (money out, not back yet); purchase paid already in expenses via transaction
+  // Only count transactions after the balance set date (earlier ones are already reflected in bankBalance)
+  const cutoff = state.balanceSetDate || null;
+  const txAfter = state.transactions.filter(t => !cutoff || t.date > cutoff);
+  const txIncome = txAfter.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const txExpenses = txAfter.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const txNet = txIncome - txExpenses;
+  // Wishlist: owed-to-me pending = money out, not returned yet
   const owedPending = (state.wishlist || []).filter(w => w.cat === 'owed' && w.status === 'pending').reduce((s,w) => s + w.amount, 0);
   const netWorth = (state.bankBalance || 0) + txNet + totalAssets - totalLiabilities - owedPending;
 
