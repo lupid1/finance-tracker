@@ -102,6 +102,24 @@
     --sans: 'IBM Plex Sans', sans-serif;
     --radius: 2px;
     --border: 1px solid var(--gray-200);
+    --bg: var(--white);
+    --fg: var(--black);
+    --surface: #fff;
+    --surface2: var(--gray-100);
+  }
+
+  body.dark {
+    --black: #f0f0f0;
+    --white: #111;
+    --gray-100: #1e1e1e;
+    --gray-200: #2e2e2e;
+    --gray-400: #666;
+    --gray-600: #aaa;
+    --bg: #111;
+    --fg: #f0f0f0;
+    --surface: #1a1a1a;
+    --surface2: #222;
+    --border: 1px solid #2e2e2e;
   }
 
   body {
@@ -111,6 +129,7 @@
     min-height: 100vh;
     font-size: 13px;
     line-height: 1.6;
+    transition: background 0.2s, color 0.2s;
   }
 
   /* ── LAYOUT ── */
@@ -711,11 +730,13 @@
         <button class="active" data-section="dashboard" onclick="showSection('dashboard', this)">Dashboard</button>
         <button data-section="transactions" onclick="showSection('transactions', this)">Transactions</button>
         <button data-section="budget" onclick="showSection('budget', this)">Budget</button>
+        <button data-section="wishlist" onclick="showSection('wishlist', this)">List</button>
       </nav>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;align-items:center;gap:6px;">
       <span id="user-label" style="font-size:10px;color:var(--gray-400);letter-spacing:0.06em;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       <button class="sync-btn" id="sync-btn" onclick="window._fbSave && window._fbSave(state)">Sync</button>
+      <button class="sync-btn" onclick="openSettings()">Settings</button>
       <button class="sync-btn" onclick="window._fbSignOut && window._fbSignOut()" style="font-size:10px;">Sign out</button>
     </div>
   </header>
@@ -810,6 +831,7 @@
         <input type="text" id="filter-search" placeholder="Search..." oninput="renderTransactions()" style="flex:1;min-width:100px;">
       </div>
 
+      <div id="recurring-panel" style="margin-bottom:20px;"></div>
       <div id="tx-table-wrap"></div>
     </div>
 
@@ -832,6 +854,27 @@
         <div class="section-title">Summary</div>
       </div>
       <div id="budget-summary"></div>
+    </div>
+
+    <!-- WISHLIST -->
+    <div class="section" id="section-wishlist">
+      <div class="section-header">
+        <div class="section-title">List</div>
+        <button class="btn btn-sm" onclick="openWishModal()">+ Add Item</button>
+      </div>
+      <div class="filter-row">
+        <select id="wish-filter-cat" onchange="renderWishlist()">
+          <option value="">All categories</option>
+          <option value="owed">Owed to me</option>
+          <option value="purchase">Purchase</option>
+        </select>
+        <select id="wish-filter-status" onchange="renderWishlist()">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+      <div id="wishlist-wrap"></div>
     </div>
 
   </main>
@@ -867,6 +910,26 @@
     <div class="field">
       <label>Note <span style="color:var(--gray-400)">(optional)</span></label>
       <input type="text" id="tx-note" placeholder="">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0 4px;border-top:var(--border);margin-top:8px;">
+      <span style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray-600);">Recurring</span>
+      <button id="tx-recurring-toggle" onclick="toggleTxRecurring()" style="font-family:var(--mono);font-size:11px;padding:4px 12px;border:1px solid var(--gray-200);background:none;cursor:pointer;border-radius:var(--radius);color:var(--black);">Off</button>
+    </div>
+    <div id="tx-recurring-fields" style="display:none;margin-top:8px;">
+      <div class="field">
+        <label>Interval</label>
+        <select id="tx-interval">
+          <option value="weekly">Weekly</option>
+          <option value="fortnightly">Fortnightly</option>
+          <option value="monthly" selected>Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Next due date</label>
+        <input type="date" id="tx-next-due">
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm btn-danger" id="tx-delete-btn" onclick="deleteTx()" style="display:none;">Delete</button>
@@ -915,6 +978,82 @@
   </div>
 </div>
 
+<!-- WISHLIST MODAL -->
+<div class="modal-overlay" id="wish-modal">
+  <div class="modal">
+    <h3 id="wish-modal-title">Add Item</h3>
+    <div class="field">
+      <label>Category</label>
+      <select id="wish-cat" onchange="updateWishFields()">
+        <option value="owed">Owed to me (I paid for someone)</option>
+        <option value="purchase">Purchase (I want to buy)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="wish-title" placeholder="e.g. Dinner with Alex, Laptop">
+    </div>
+    <div class="field" id="wish-person-field">
+      <label>Person</label>
+      <input type="text" id="wish-person" placeholder="e.g. Alex">
+    </div>
+    <div class="field">
+      <label>Amount (AUD)</label>
+      <input type="number" id="wish-amount" placeholder="0.00" step="0.01" min="0">
+    </div>
+    <div class="field">
+      <label>Notes <span style="color:var(--gray-400)">(optional)</span></label>
+      <input type="text" id="wish-note" placeholder="">
+    </div>
+    <div class="field">
+      <label>Date</label>
+      <input type="date" id="wish-date">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm btn-danger" id="wish-delete-btn" onclick="deleteWishItem()" style="display:none;">Delete</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeWishModal()">Cancel</button>
+      <button class="btn btn-sm" onclick="saveWishItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <h3>Settings</h3>
+
+    <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray-600);margin-bottom:12px;margin-top:4px;">Balance</div>
+    <div class="field">
+      <label>Current Bank Balance (AUD)</label>
+      <input type="number" id="settings-balance" placeholder="0.00" step="0.01">
+      <div class="setup-note">Used as your baseline — added to net worth without appearing as income.</div>
+    </div>
+
+    <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray-600);margin-bottom:12px;margin-top:20px;">Appearance</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:var(--border);">
+      <span style="font-size:12px;">Dark mode</span>
+      <button id="dark-mode-toggle" onclick="toggleDarkMode()" style="font-family:var(--mono);font-size:11px;padding:5px 14px;border:1px solid var(--gray-200);background:none;cursor:pointer;border-radius:var(--radius);color:var(--black);">Off</button>
+    </div>
+
+    <div class="modal-actions" style="margin-top:20px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-sm" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECURRING DUE MODAL -->
+<div class="modal-overlay" id="recurring-due-modal">
+  <div class="modal">
+    <h3>Recurring Payments Due</h3>
+    <p style="font-size:12px;color:var(--gray-600);margin-bottom:16px;font-family:var(--sans);">The following recurring items are due. Confirm each to add to transactions.</p>
+    <div id="recurring-due-list"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeRecurringDueModal()">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -927,6 +1066,10 @@ let state = {
   budgetCategories: [],
   assets: [],
   liabilities: [],
+  wishlist: [],
+  recurring: [],
+  bankBalance: 0,
+  darkMode: false,
 };
 
 // Expose state to Firebase module
@@ -957,7 +1100,12 @@ function init() {
       state.budgetCategories = window._state.budgetCategories || [];
       state.assets = window._state.assets || [];
       state.liabilities = window._state.liabilities || [];
+      state.wishlist = window._state.wishlist || [];
+      state.recurring = window._state.recurring || [];
+      state.bankBalance = window._state.bankBalance || 0;
+      state.darkMode = window._state.darkMode || false;
     }
+    applyDarkMode();
     renderAll();
     buildFilterOptions();
   };
@@ -990,6 +1138,365 @@ async function autoSave() {
 }
 
 // ─────────────────────────────────────────────
+// RECURRING
+// ─────────────────────────────────────────────
+function setTxRecurringUI(on) {
+  document.getElementById('tx-recurring-toggle').textContent = on ? 'On' : 'Off';
+  document.getElementById('tx-recurring-fields').style.display = on ? 'block' : 'none';
+}
+
+function toggleTxRecurring() {
+  const btn = document.getElementById('tx-recurring-toggle');
+  const on = btn.textContent === 'Off';
+  setTxRecurringUI(on);
+}
+
+function nextDueDate(current, interval) {
+  const d = new Date(current);
+  switch (interval) {
+    case 'weekly':      d.setDate(d.getDate() + 7); break;
+    case 'fortnightly': d.setDate(d.getDate() + 14); break;
+    case 'monthly':     d.setMonth(d.getMonth() + 1); break;
+    case 'quarterly':   d.setMonth(d.getMonth() + 3); break;
+    case 'yearly':      d.setFullYear(d.getFullYear() + 1); break;
+  }
+  return d.toISOString().split('T')[0];
+}
+
+function checkRecurring() {
+  const today = new Date().toISOString().split('T')[0];
+  const due = (state.recurring || []).filter(r => r.active && r.nextDue <= today);
+  if (!due.length) return;
+
+  // Build due list UI
+  const listEl = document.getElementById('recurring-due-list');
+  listEl.innerHTML = due.map(r => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:var(--border);gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:12px;font-weight:500;">${r.desc}</div>
+        <div style="font-size:10px;color:var(--gray-400);margin-top:2px;">${r.interval} · ${r.type === 'income' ? '+' : '−'}${fmt(r.amount)} · due ${r.nextDue}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="confirmRecurring('${r.id}')" class="btn btn-sm" style="font-size:10px;padding:4px 12px;">Confirm</button>
+        <button onclick="skipRecurring('${r.id}')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 10px;">Skip</button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('recurring-due-modal').classList.add('open');
+}
+
+function confirmRecurring(id) {
+  const r = state.recurring.find(x => x.id === id);
+  if (!r) return;
+  const today = new Date().toISOString().split('T')[0];
+  state.transactions.push({ id: uid(), type: r.type, desc: r.desc, amount: r.amount, date: today, category: r.category, note: r.note || '' });
+  r.nextDue = nextDueDate(today, r.interval);
+  // re-render due list — remove confirmed item
+  const listEl = document.getElementById('recurring-due-list');
+  const row = listEl.querySelector(`[onclick="confirmRecurring('${id}')"]`);
+  if (row) row.closest('div[style]').remove();
+  if (!listEl.children.length) closeRecurringDueModal();
+  renderTransactions();
+  renderDashboard();
+  buildFilterOptions();
+  autoSave();
+  toast('Added: ' + r.desc);
+}
+
+function skipRecurring(id) {
+  const r = state.recurring.find(x => x.id === id);
+  if (!r) return;
+  r.nextDue = nextDueDate(r.nextDue, r.interval);
+  const listEl = document.getElementById('recurring-due-list');
+  const row = listEl.querySelector(`[onclick="skipRecurring('${id}')"]`);
+  if (row) row.closest('div[style]').remove();
+  if (!listEl.children.length) closeRecurringDueModal();
+  autoSave();
+  toast('Skipped');
+}
+
+function closeRecurringDueModal() {
+  document.getElementById('recurring-due-modal').classList.remove('open');
+}
+
+function deleteRecurring(id) {
+  state.recurring = state.recurring.filter(r => r.id !== id);
+  renderRecurringPanel();
+  autoSave();
+  toast('Deleted');
+}
+
+function toggleRecurringActive(id) {
+  const r = state.recurring.find(x => x.id === id);
+  if (!r) return;
+  r.active = !r.active;
+  renderRecurringPanel();
+  autoSave();
+  toast(r.active ? 'Resumed' : 'Paused');
+}
+
+function renderRecurringPanel() {
+  const panel = document.getElementById('recurring-panel');
+  if (!panel) return;
+  const items = state.recurring || [];
+  if (!items.length) { panel.innerHTML = ''; return; }
+
+  panel.innerHTML = `
+    <details style="margin-bottom:4px;">
+      <summary style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;padding:8px 0;border-bottom:var(--border);list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span>Recurring (${items.length})</span>
+        <span style="color:var(--gray-400);">▾</span>
+      </summary>
+      <div class="table-wrap" style="margin-top:8px;">
+        <table>
+          <thead><tr><th>Name</th><th>Interval</th><th>Next Due</th><th class="amount">Amount</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${items.map(r => `<tr>
+              <td style="opacity:${r.active?1:0.45}">${r.desc}</td>
+              <td style="opacity:${r.active?1:0.45}">${r.interval}</td>
+              <td style="opacity:${r.active?1:0.45}">${r.nextDue}</td>
+              <td class="amount" style="opacity:${r.active?1:0.45}">${r.type==='income'?'+':'−'}${fmt(r.amount)}</td>
+              <td><span style="font-size:10px;color:${r.active?'var(--black)':'var(--gray-400)'};">${r.active?'Active':'Paused'}</span></td>
+              <td style="display:flex;gap:6px;padding:10px 8px;">
+                <button onclick="toggleRecurringActive('${r.id}')" style="font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--gray-200);background:none;cursor:pointer;border-radius:var(--radius);color:var(--black);white-space:nowrap;">${r.active?'Pause':'Resume'}</button>
+                <button onclick="deleteRecurring('${r.id}')" style="font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--gray-200);background:none;cursor:pointer;border-radius:var(--radius);color:var(--black);">×</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </details>`;
+}
+
+// ─────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settings-balance').value = state.bankBalance || '';
+  const dm = state.darkMode || false;
+  const btn = document.getElementById('dark-mode-toggle');
+  btn.textContent = dm ? 'On' : 'Off';
+  btn.style.borderColor = dm ? 'var(--black)' : 'var(--gray-200)';
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+function saveSettings() {
+  const bal = parseFloat(document.getElementById('settings-balance').value) || 0;
+  state.bankBalance = bal;
+  closeSettings();
+  renderDashboard();
+  autoSave();
+  toast('Settings saved');
+}
+
+function toggleDarkMode() {
+  state.darkMode = !state.darkMode;
+  applyDarkMode();
+  const btn = document.getElementById('dark-mode-toggle');
+  btn.textContent = state.darkMode ? 'On' : 'Off';
+  btn.style.borderColor = state.darkMode ? 'var(--black)' : 'var(--gray-200)';
+}
+
+function applyDarkMode() {
+  document.body.classList.toggle('dark', !!state.darkMode);
+}
+
+// ─────────────────────────────────────────────
+// WISHLIST
+// ─────────────────────────────────────────────
+let editWishId = null;
+
+function openWishModal(id = null) {
+  editWishId = id;
+  const deleteBtn = document.getElementById('wish-delete-btn');
+  const today = new Date().toISOString().split('T')[0];
+
+  if (id) {
+    const item = state.wishlist.find(w => w.id === id);
+    document.getElementById('wish-modal-title').textContent = 'Edit Item';
+    document.getElementById('wish-cat').value = item.cat;
+    document.getElementById('wish-title').value = item.title;
+    document.getElementById('wish-person').value = item.person || '';
+    document.getElementById('wish-amount').value = item.amount;
+    document.getElementById('wish-note').value = item.note || '';
+    document.getElementById('wish-date').value = item.date || today;
+    deleteBtn.style.display = 'inline-flex';
+  } else {
+    document.getElementById('wish-modal-title').textContent = 'Add Item';
+    document.getElementById('wish-cat').value = 'owed';
+    document.getElementById('wish-title').value = '';
+    document.getElementById('wish-person').value = '';
+    document.getElementById('wish-amount').value = '';
+    document.getElementById('wish-note').value = '';
+    document.getElementById('wish-date').value = today;
+    deleteBtn.style.display = 'none';
+  }
+  updateWishFields();
+  document.getElementById('wish-modal').classList.add('open');
+}
+
+function closeWishModal() {
+  document.getElementById('wish-modal').classList.remove('open');
+  editWishId = null;
+}
+
+function updateWishFields() {
+  const cat = document.getElementById('wish-cat').value;
+  document.getElementById('wish-person-field').style.display = cat === 'owed' ? 'block' : 'none';
+}
+
+function saveWishItem() {
+  const cat = document.getElementById('wish-cat').value;
+  const title = document.getElementById('wish-title').value.trim();
+  const person = document.getElementById('wish-person').value.trim();
+  const amount = parseFloat(document.getElementById('wish-amount').value);
+  const note = document.getElementById('wish-note').value.trim();
+  const date = document.getElementById('wish-date').value;
+
+  if (!title || isNaN(amount) || amount <= 0) { toast('Fill in title and amount.'); return; }
+
+  const item = { id: editWishId || uid(), cat, title, person, amount, note, date, status: 'pending' };
+
+  if (editWishId) {
+    const idx = state.wishlist.findIndex(w => w.id === editWishId);
+    // preserve existing status on edit
+    item.status = state.wishlist[idx].status;
+    if (idx !== -1) state.wishlist[idx] = item;
+  } else {
+    state.wishlist.push(item);
+  }
+
+  closeWishModal();
+  renderWishlist();
+  renderDashboard();
+  autoSave();
+  toast(editWishId ? 'Updated' : 'Added');
+}
+
+function deleteWishItem() {
+  if (!editWishId) return;
+  state.wishlist = state.wishlist.filter(w => w.id !== editWishId);
+  closeWishModal();
+  renderWishlist();
+  renderDashboard();
+  autoSave();
+  toast('Deleted');
+}
+
+function markWishPaid(id) {
+  const item = state.wishlist.find(w => w.id === id);
+  if (!item) return;
+
+  const wasPaid = item.status === 'paid';
+
+  if (wasPaid) {
+    // Undo — remove the linked transaction if it exists
+    item.status = 'pending';
+    if (item.linkedTxId) {
+      state.transactions = state.transactions.filter(t => t.id !== item.linkedTxId);
+      item.linkedTxId = null;
+    }
+    toast('Marked as pending');
+  } else {
+    // Mark paid — create a linked transaction
+    item.status = 'paid';
+    const today = new Date().toISOString().split('T')[0];
+    const txId = uid();
+    item.linkedTxId = txId;
+
+    if (item.cat === 'owed') {
+      // They paid me back — income
+      state.transactions.push({
+        id: txId,
+        type: 'income',
+        desc: item.title + (item.person ? ' (' + item.person + ')' : ''),
+        amount: item.amount,
+        date: today,
+        category: 'Other Income',
+        note: item.note || 'Repayment'
+      });
+    } else {
+      // I bought it — expense
+      state.transactions.push({
+        id: txId,
+        type: 'expense',
+        desc: item.title,
+        amount: item.amount,
+        date: today,
+        category: 'Purchase',
+        note: item.note || ''
+      });
+    }
+    toast(item.cat === 'owed' ? '+' + fmt(item.amount) + ' added to transactions' : '-' + fmt(item.amount) + ' added to transactions');
+  }
+
+  buildFilterOptions();
+  renderWishlist();
+  renderTransactions();
+  renderDashboard();
+  autoSave();
+}
+
+function renderWishlist() {
+  const wrap = document.getElementById('wishlist-wrap');
+  if (!wrap) return;
+
+  const catF = document.getElementById('wish-filter-cat')?.value || '';
+  const statusF = document.getElementById('wish-filter-status')?.value || '';
+
+  let items = [...(state.wishlist || [])];
+  if (catF) items = items.filter(w => w.cat === catF);
+  if (statusF) items = items.filter(w => w.status === statusF);
+  items.sort((a, b) => (a.status === 'paid') - (b.status === 'paid') || new Date(b.date) - new Date(a.date));
+
+  if (!items.length) {
+    wrap.innerHTML = '<div class="empty">No items yet.</div>';
+    return;
+  }
+
+  const totalOwed = (state.wishlist || []).filter(w => w.cat === 'owed' && w.status === 'pending').reduce((s,w) => s+w.amount, 0);
+  const totalPurchases = (state.wishlist || []).filter(w => w.cat === 'purchase' && w.status === 'pending').reduce((s,w) => s+w.amount, 0);
+
+  wrap.innerHTML = `
+    <div style="display:flex;gap:1px;background:var(--black);border:1px solid var(--black);margin-bottom:20px;">
+      <div style="flex:1;background:var(--white);padding:14px 16px;">
+        <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray-600);margin-bottom:6px;">Owed to me</div>
+        <div style="font-size:18px;font-weight:500;">${fmt(totalOwed)}</div>
+      </div>
+      <div style="flex:1;background:var(--white);padding:14px 16px;">
+        <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray-600);margin-bottom:6px;">Pending purchases</div>
+        <div style="font-size:18px;font-weight:500;">${fmt(totalPurchases)}</div>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Title</th>
+        <th>Category</th>
+        <th>Person</th>
+        <th>Note</th>
+        <th class="amount">Amount</th>
+        <th>Status</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${items.map(w => `<tr style="opacity:${w.status==='paid'?'0.45':'1'}">
+          <td style="cursor:pointer" onclick="openWishModal('${w.id}')">${w.title}</td>
+          <td><span class="tag ${w.cat==='owed'?'income':''}">${w.cat === 'owed' ? 'Owed' : 'Purchase'}</span></td>
+          <td style="color:var(--gray-400)">${w.person || '—'}</td>
+          <td style="color:var(--gray-400)">${w.note || '—'}</td>
+          <td class="amount">${fmt(w.amount)}</td>
+          <td><span style="font-size:10px;color:${w.status==='paid'?'var(--gray-400)':'var(--black)'};">${w.status === 'paid' ? 'Paid' : 'Pending'}</span></td>
+          <td><button onclick="markWishPaid('${w.id}')" style="font-family:var(--mono);font-size:10px;padding:3px 10px;border:1px solid var(--gray-200);background:none;cursor:pointer;border-radius:var(--radius);color:var(--black);white-space:nowrap;">${w.status === 'paid' ? 'Undo' : 'Paid'}</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+// ─────────────────────────────────────────────
 // NAV
 // ─────────────────────────────────────────────
 function showSection(name, btn) {
@@ -1000,6 +1507,7 @@ function showSection(name, btn) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'transactions') renderTransactions();
   if (name === 'budget') renderBudget();
+  if (name === 'wishlist') renderWishlist();
 }
 
 // ─────────────────────────────────────────────
@@ -1054,7 +1562,9 @@ function renderAll() {
   renderDashboard();
   renderTransactions();
   renderBudget();
+  renderWishlist();
   buildFilterOptions();
+  checkRecurring();
 }
 
 // ─────────────────────────────────────────────
@@ -1269,7 +1779,10 @@ function renderDashboard() {
 
   const totalAssets = state.assets.reduce((s, a) => s + a.value, 0);
   const totalLiabilities = state.liabilities.reduce((s, l) => s + l.value, 0);
-  const netWorth = totalAssets - totalLiabilities;
+  // Add bank balance baseline + pending owed amounts, subtract pending purchases
+  const owedPending = (state.wishlist || []).filter(w => w.cat === 'owed' && w.status === 'pending').reduce((s,w) => s + w.amount, 0);
+  const purchasePaid = (state.wishlist || []).filter(w => w.cat === 'purchase' && w.status === 'paid').reduce((s,w) => s + w.amount, 0);
+  const netWorth = (state.bankBalance || 0) + totalAssets - totalLiabilities - owedPending - purchasePaid;
 
   document.getElementById('dash-networth').textContent = fmtSigned(netWorth);
   document.getElementById('dash-income').textContent = fmt(income);
@@ -1383,6 +1896,7 @@ function buildFilterOptions() {
 }
 
 function renderTransactions() {
+  renderRecurringPanel();
   const typeF = document.getElementById('filter-type')?.value || '';
   const catF = document.getElementById('filter-cat')?.value || '';
   const monthF = document.getElementById('filter-month')?.value || '';
@@ -1442,6 +1956,7 @@ function openTxModal(id = null) {
     updateTxCatOptions();
     document.getElementById('tx-cat').value = tx.category;
     deleteBtn.style.display = 'inline-flex';
+    setTxRecurringUI(false);
   } else {
     document.getElementById('tx-modal-title').textContent = 'Add Transaction';
     document.getElementById('tx-type').value = 'expense';
@@ -1451,6 +1966,10 @@ function openTxModal(id = null) {
     document.getElementById('tx-note').value = '';
     updateTxCatOptions();
     deleteBtn.style.display = 'none';
+    // reset recurring
+    setTxRecurringUI(false);
+    document.getElementById('tx-interval').value = 'monthly';
+    document.getElementById('tx-next-due').value = new Date().toISOString().split('T')[0];
   }
 
   modal.classList.add('open');
@@ -1478,6 +1997,9 @@ function saveTx() {
   const date = document.getElementById('tx-date').value;
   const cat = document.getElementById('tx-cat').value;
   const note = document.getElementById('tx-note').value.trim();
+  const isRecurring = document.getElementById('tx-recurring-toggle').textContent === 'On';
+  const interval = document.getElementById('tx-interval').value;
+  const nextDue = document.getElementById('tx-next-due').value;
 
   if (!desc || isNaN(amount) || amount <= 0 || !date) {
     toast('Fill in description, amount, and date.');
@@ -1489,6 +2011,15 @@ function saveTx() {
     if (idx !== -1) state.transactions[idx] = { id: editTxId, type, desc, amount, date, category: cat, note };
   } else {
     state.transactions.push({ id: uid(), type, desc, amount, date, category: cat, note });
+  }
+
+  // Create/update recurring rule if toggled on (only on new transactions)
+  if (isRecurring && !editTxId) {
+    if (!nextDue) { toast('Set a next due date for recurring.'); return; }
+    state.recurring.push({
+      id: uid(), type, desc, amount, category: cat, note,
+      interval, nextDue, active: true
+    });
   }
 
   closeTxModal();
@@ -1682,6 +2213,9 @@ document.addEventListener('keydown', e => {
     closeTxModal();
     closeBudgetModal();
     closeNWModal();
+    closeWishModal();
+    closeSettings();
+    closeRecurringDueModal();
   }
 });
 
@@ -1692,6 +2226,9 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
       closeTxModal();
       closeBudgetModal();
       closeNWModal();
+      closeWishModal();
+      closeSettings();
+      closeRecurringDueModal();
     }
   });
 });
