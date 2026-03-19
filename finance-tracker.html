@@ -79,7 +79,10 @@
       });
     } else {
       if (dbListener && dbRef) off(dbRef, 'value', dbListener);
-      document.getElementById('setup-screen').style.display = 'flex';
+      const s = document.getElementById('setup-screen');
+      s.style.display = 'flex';
+      s.style.alignItems = 'center';
+      s.style.justifyContent = 'center';
     }
   });
 </script>
@@ -186,7 +189,7 @@
     position: fixed; inset: 0;
     background: var(--white);
     z-index: 200;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
     padding: 24px;
@@ -339,13 +342,14 @@
 
   .table-wrap {
     width: 100%;
+    max-width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin-bottom: 32px;
   }
   table {
     width: 100%;
-    min-width: 420px;
+    min-width: 0;
     border-collapse: collapse;
   }
 
@@ -558,21 +562,43 @@
 
   /* ── MOBILE ── */
   @media (max-width: 600px) {
-    header { padding: 12px 16px; }
-    main { padding: 20px 16px; }
+    header { padding: 10px 14px; }
+    main { padding: 16px 14px; }
 
     .kpi-row { grid-template-columns: 1fr 1fr; }
-    .kpi-value { font-size: 18px; }
+    .kpi-value { font-size: 15px; }
+    .kpi-label { font-size: 9px; }
+    .kpi { padding: 14px 12px; }
 
-    table { font-size: 11px; }
-    td, th { padding: 8px 8px; }
+    table { font-size: 11px; min-width: 0; }
+    td, th { padding: 7px 8px; font-size: 10px; white-space: nowrap; }
 
-    .logo { font-size: 12px; }
-    nav button { padding: 5px 8px; font-size: 10px; }
+    .logo { font-size: 11px; letter-spacing: 0.08em; }
+    nav button { padding: 4px 7px; font-size: 9px; }
 
     .budget-grid { grid-template-columns: 1fr 1fr; }
+    .budget-card { padding: 12px 12px 10px; }
+    .budget-name { font-size: 10px; }
+    .budget-figures { font-size: 11px; }
 
-    .modal { padding: 20px; }
+    .modal { padding: 18px 16px; }
+    .field input, .field select, .field textarea {
+      font-size: 13px;
+      padding: 8px 10px;
+    }
+
+    .net-worth-value { font-size: 26px; }
+    .section-title { font-size: 10px; }
+
+    .filter-row select, .filter-row input {
+      font-size: 11px;
+      padding: 5px 8px;
+      max-width: 100%;
+    }
+
+    #user-label { display: none; }
+
+    .tag { font-size: 9px; padding: 1px 5px; }
   }
 
   @media (max-width: 400px) {
@@ -580,6 +606,22 @@
     .budget-grid { grid-template-columns: 1fr; }
     nav button { padding: 5px 7px; }
   }
+
+  /* ── CHART PERIOD BUTTONS ── */
+  .chart-period-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    padding: 4px 9px;
+    border: 1px solid var(--gray-200);
+    background: none;
+    cursor: pointer;
+    color: var(--gray-600);
+    border-radius: var(--radius);
+    transition: all 0.1s;
+  }
+  .chart-period-btn:hover { border-color: var(--black); color: var(--black); }
+  .chart-period-btn.active { background: var(--black); color: var(--white); border-color: var(--black); }
 
   /* ── SETTINGS LINK ── */
   .settings-link {
@@ -709,6 +751,18 @@
           <div class="kpi-sub">% of income saved</div>
         </div>
       </div>
+
+      <div class="section-header" style="margin-bottom:8px;">
+        <div class="section-title">Income &amp; Expenses</div>
+        <div style="display:flex;gap:2px;" id="chart-period-btns">
+          <button class="chart-period-btn active" onclick="setChartPeriod('current',this)">This Month</button>
+          <button class="chart-period-btn" onclick="setChartPeriod('month',this)">Month</button>
+          <button class="chart-period-btn" onclick="setChartPeriod('quarter',this)">Quarter</button>
+          <button class="chart-period-btn" onclick="setChartPeriod('year',this)">Year</button>
+        </div>
+      </div>
+      <div id="chart-picker" style="margin-bottom:10px;display:none;"></div>
+      <div id="dash-line-chart" style="margin-bottom:28px;width:100%;"></div>
 
       <div class="section-header">
         <div class="section-title">Expenses by Category</div>
@@ -894,9 +948,7 @@ function init() {
   currentBudgetMonth = new Date();
   updateBudgetMonthDisplay();
 
-  // Firebase module handles auth state — show setup screen by default
-  // onAuthStateChanged in the module will hide it when signed in
-  document.getElementById('setup-screen').style.display = 'flex';
+  // Firebase onAuthStateChanged handles showing/hiding setup screen
 
   // When Firebase loads data, sync it into state and render
   window._onDataLoaded = function() {
@@ -1006,6 +1058,204 @@ function renderAll() {
 }
 
 // ─────────────────────────────────────────────
+// LINE CHART
+// ─────────────────────────────────────────────
+let chartPeriod = 'current';
+let chartPickerMonth = null;   // { year, month } 0-indexed
+let chartPickerQuarter = null; // { year, quarter } 0-indexed
+let chartPickerYear = null;    // { year }
+
+function setChartPeriod(period, btn) {
+  chartPeriod = period;
+  document.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const picker = document.getElementById('chart-picker');
+  const now = new Date();
+
+  if (period === 'current') {
+    picker.style.display = 'none';
+    chartPickerMonth = null;
+    renderLineChart();
+    return;
+  }
+
+  if (period === 'month') {
+    // Default to current month
+    if (!chartPickerMonth) chartPickerMonth = { year: now.getFullYear(), month: now.getMonth() };
+    renderChartPicker();
+  } else if (period === 'quarter') {
+    if (!chartPickerQuarter) chartPickerQuarter = { year: now.getFullYear(), quarter: Math.floor(now.getMonth() / 3) };
+    renderChartPicker();
+  } else if (period === 'year') {
+    if (!chartPickerYear) chartPickerYear = { year: now.getFullYear() };
+    renderChartPicker();
+  }
+
+  renderLineChart();
+}
+
+function renderChartPicker() {
+  const picker = document.getElementById('chart-picker');
+  const now = new Date();
+  picker.style.display = 'flex';
+  picker.style.alignItems = 'center';
+  picker.style.gap = '8px';
+  picker.style.flexWrap = 'wrap';
+
+  if (chartPeriod === 'month') {
+    const { year, month } = chartPickerMonth;
+    // Build month options
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    // Year range: 5 years back to current
+    const years = [];
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) years.push(y);
+
+    picker.innerHTML = `
+      <select onchange="chartPickerMonth.month=parseInt(this.value);renderLineChart()" style="font-family:var(--mono);font-size:11px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:2px;background:var(--white);">
+        ${months.map((m,i) => `<option value="${i}" ${i===month?'selected':''}>${m}</option>`).join('')}
+      </select>
+      <select onchange="chartPickerMonth.year=parseInt(this.value);renderLineChart()" style="font-family:var(--mono);font-size:11px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:2px;background:var(--white);">
+        ${years.map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}
+      </select>`;
+
+  } else if (chartPeriod === 'quarter') {
+    const { year, quarter } = chartPickerQuarter;
+    const years = [];
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) years.push(y);
+
+    picker.innerHTML = `
+      <select onchange="chartPickerQuarter.quarter=parseInt(this.value);renderLineChart()" style="font-family:var(--mono);font-size:11px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:2px;background:var(--white);">
+        ${['Q1','Q2','Q3','Q4'].map((q,i) => `<option value="${i}" ${i===quarter?'selected':''}>${q}</option>`).join('')}
+      </select>
+      <select onchange="chartPickerQuarter.year=parseInt(this.value);renderLineChart()" style="font-family:var(--mono);font-size:11px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:2px;background:var(--white);">
+        ${years.map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}
+      </select>`;
+
+  } else if (chartPeriod === 'year') {
+    const { year } = chartPickerYear;
+    const years = [];
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) years.push(y);
+
+    picker.innerHTML = `
+      <select onchange="chartPickerYear.year=parseInt(this.value);renderLineChart()" style="font-family:var(--mono);font-size:11px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:2px;background:var(--white);">
+        ${years.map(y => `<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}
+      </select>`;
+  }
+}
+
+function renderLineChart() {
+  const wrap = document.getElementById('dash-line-chart');
+  if (!wrap) return;
+
+  const now = new Date();
+  let labels = [];
+  let incomeData = [];
+  let expenseData = [];
+  let chartTitle = '';
+
+  if (chartPeriod === 'current') {
+    // Current month — day by day up to today
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = now.getDate();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+      labels.push(d % 5 === 1 || d === 1 ? String(d) : '');
+      incomeData.push(state.transactions.filter(t => t.type === 'income' && t.date === key).reduce((s,t) => s+t.amount, 0));
+      expenseData.push(state.transactions.filter(t => t.type === 'expense' && t.date === key).reduce((s,t) => s+t.amount, 0));
+    }
+    chartTitle = now.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+
+  } else if (chartPeriod === 'month' && chartPickerMonth) {
+    // Specific month — day by day
+    const { year, month } = chartPickerMonth;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+      labels.push(d % 5 === 1 ? String(d) : '');
+      incomeData.push(state.transactions.filter(t => t.type === 'income' && t.date === key).reduce((s,t) => s+t.amount, 0));
+      expenseData.push(state.transactions.filter(t => t.type === 'expense' && t.date === key).reduce((s,t) => s+t.amount, 0));
+    }
+    chartTitle = new Date(year, month, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+
+  } else if (chartPeriod === 'quarter' && chartPickerQuarter) {
+    // Specific quarter — month by month (3 points)
+    const { year, quarter } = chartPickerQuarter;
+    const startMonth = quarter * 3;
+    for (let m = startMonth; m < startMonth + 3; m++) {
+      const key = year + '-' + String(m+1).padStart(2,'0');
+      labels.push(new Date(year, m, 1).toLocaleDateString('en-AU', { month: 'short' }));
+      incomeData.push(state.transactions.filter(t => t.type === 'income' && monthKey(t.date) === key).reduce((s,t) => s+t.amount, 0));
+      expenseData.push(state.transactions.filter(t => t.type === 'expense' && monthKey(t.date) === key).reduce((s,t) => s+t.amount, 0));
+    }
+    chartTitle = `Q${quarter+1} ${year}`;
+
+  } else if (chartPeriod === 'year' && chartPickerYear) {
+    // Specific year — month by month (12 points)
+    const { year } = chartPickerYear;
+    for (let m = 0; m < 12; m++) {
+      const key = year + '-' + String(m+1).padStart(2,'0');
+      labels.push(new Date(year, m, 1).toLocaleDateString('en-AU', { month: 'short' }));
+      incomeData.push(state.transactions.filter(t => t.type === 'income' && monthKey(t.date) === key).reduce((s,t) => s+t.amount, 0));
+      expenseData.push(state.transactions.filter(t => t.type === 'expense' && monthKey(t.date) === key).reduce((s,t) => s+t.amount, 0));
+    }
+    chartTitle = String(chartPickerYear.year);
+  } else {
+    return;
+  }
+
+  const W = wrap.clientWidth || 320;
+  const H = 170;
+  const padL = 52, padR = 16, padT = 22, padB = 28;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+  const allVals = [...incomeData, ...expenseData];
+  const maxVal = Math.max(...allVals, 1);
+  const n = labels.length;
+
+  function xPos(i) { return n <= 1 ? padL + chartW / 2 : padL + (i / (n - 1)) * chartW; }
+  function yPos(v) { return padT + chartH - (v / maxVal) * chartH; }
+
+  const ticks = 4;
+  let yLines = '', yLabels = '';
+  for (let i = 0; i <= ticks; i++) {
+    const v = (maxVal / ticks) * i;
+    const y = yPos(v);
+    yLines += `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="#e0e0e0" stroke-width="1"/>`;
+    const lbl = v >= 1000 ? '$' + (v/1000).toFixed(1).replace('.0','') + 'k' : '$' + v.toFixed(0);
+    yLabels += `<text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="9" fill="#999" font-family="IBM Plex Mono, monospace">${lbl}</text>`;
+  }
+
+  let xLabels = '';
+  labels.forEach((l, i) => {
+    if (l) xLabels += `<text x="${xPos(i)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#999" font-family="IBM Plex Mono, monospace">${l}</text>`;
+  });
+
+  function makePath(data) {
+    return data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xPos(i).toFixed(1)},${yPos(v).toFixed(1)}`).join(' ');
+  }
+
+  function makeDots(data, fill) {
+    return data.filter((_,i) => labels[i] !== '' || n <= 12).map((v, i) => `<circle cx="${xPos(i).toFixed(1)}" cy="${yPos(v).toFixed(1)}" r="${n > 15 ? 2 : 3}" fill="${fill}" stroke="#fafafa" stroke-width="1.5"/>`).join('');
+  }
+
+  const legend = `
+    <text x="${padL}" y="12" font-size="9" fill="#0a0a0a" font-family="IBM Plex Mono, monospace">▪ Income</text>
+    <text x="${padL + 58}" y="12" font-size="9" fill="#aaa" font-family="IBM Plex Mono, monospace">▪ Expenses</text>
+    <text x="${W - padR}" y="12" text-anchor="end" font-size="9" fill="#555" font-family="IBM Plex Mono, monospace">${chartTitle}</text>`;
+
+  wrap.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+    ${yLines}${yLabels}${xLabels}${legend}
+    <path d="${makePath(incomeData)}" fill="none" stroke="#0a0a0a" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${makePath(expenseData)}" fill="none" stroke="#aaa" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 3"/>
+    ${makeDots(incomeData, '#0a0a0a')}
+    ${makeDots(expenseData, '#aaa')}
+  </svg>`;
+}
+
+// ─────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────
 function renderDashboard() {
@@ -1028,6 +1278,8 @@ function renderDashboard() {
   document.getElementById('dash-savings-rate').textContent = savingsRate !== null ? savingsRate + '%' : '—';
   document.getElementById('dash-income-sub').textContent = monthLabel(mk);
   document.getElementById('dash-expense-sub').textContent = monthLabel(mk);
+
+  renderLineChart();
 
   // Top categories + pie chart
   const bycat = {};
