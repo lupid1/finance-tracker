@@ -1779,10 +1779,13 @@ function renderDashboard() {
 
   const totalAssets = state.assets.reduce((s, a) => s + a.value, 0);
   const totalLiabilities = state.liabilities.reduce((s, l) => s + l.value, 0);
-  // Add bank balance baseline + pending owed amounts, subtract pending purchases
+  // All-time net from transactions
+  const allTimeIncome = state.transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const allTimeExpenses = state.transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const txNet = allTimeIncome - allTimeExpenses;
+  // Wishlist adjustments: owed-to-me pending reduces net worth (money out, not back yet); purchase paid already in expenses via transaction
   const owedPending = (state.wishlist || []).filter(w => w.cat === 'owed' && w.status === 'pending').reduce((s,w) => s + w.amount, 0);
-  const purchasePaid = (state.wishlist || []).filter(w => w.cat === 'purchase' && w.status === 'paid').reduce((s,w) => s + w.amount, 0);
-  const netWorth = (state.bankBalance || 0) + totalAssets - totalLiabilities - owedPending - purchasePaid;
+  const netWorth = (state.bankBalance || 0) + txNet + totalAssets - totalLiabilities - owedPending;
 
   document.getElementById('dash-networth').textContent = fmtSigned(netWorth);
   document.getElementById('dash-income').textContent = fmt(income);
